@@ -213,7 +213,18 @@ jobs:
         with:
           submodules: true
 
+      - name: Check if release exists
+        id: check_release
+        run: |
+          if curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" | grep -q '"id"'; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create Release
+        if: steps.check_release.outputs.exists == 'false'
         id: create_release
         uses: actions/create-release@v1
         env:
@@ -223,10 +234,37 @@ jobs:
           release_name: Release ${{ github.ref }}
           draft: false
           prerelease: false
+          body: |
+            ## Leaf ${{ github.ref_name }}
+            
+            This release includes built libraries for multiple platforms:
+            
+            ### CLI Binaries
+            - Linux (x64, ARM64)
+            - macOS (Intel, Apple Silicon)
+            - Windows (x64)
+            
+            ### Libraries
+            - Android (.so files for multiple architectures)
+            - Apple XCFramework (iOS, macOS, iOS Simulator)
+
+      - name: Get existing release
+        if: steps.check_release.outputs.exists == 'true'
+        id: get_release
+        run: |
+          RELEASE_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" | \
+            jq -r '.id')
+          echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
+          echo "upload_url=https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets" >> $GITHUB_OUTPUT
 
       - name: create upload url file
         run: |
-          echo -n "${{ steps.create_release.outputs.upload_url }}" > upload_url.txt
+          if [ "${{ steps.check_release.outputs.exists }}" = "true" ]; then
+            echo -n "${{ steps.get_release.outputs.upload_url }}" > upload_url.txt
+          else
+            echo -n "${{ steps.create_release.outputs.upload_url }}" > upload_url.txt
+          fi
 
       - name: persist upload url
         uses: actions/upload-artifact@v4
