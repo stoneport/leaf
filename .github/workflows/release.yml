@@ -141,122 +141,122 @@ jobs:
           path: leaf.xcframework.zip
 
   build-lib-android:
-  runs-on: ubuntu-latest
-  steps:
-    - name: checkout
-      uses: actions/checkout@v4
-      with:
-        submodules: true
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
 
-    - name: install rust
-      uses: hecrj/setup-rust-action@v1
-      with:
-        rust-version: stable
+      - name: install rust
+        uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: stable
 
-    - name: install toolchain
-      run: |
-        cargo install cbindgen
-        apt update && apt install -y make llvm-dev libclang-dev clang pkg-config unzip curl default-jdk build-essential patchelf
-        export ANDROID_HOME=/tmp/Android/sdk
-        export NDK_HOME=/tmp/Android/sdk/ndk/25.2.9519653
-        export PATH=$ANDROID_HOME/cmdline-tools/bin:$PATH
-        cd /tmp/
-        curl -OL https://dl.google.com/android/repository/commandlinetools-linux-6858069_latest.zip
-        unzip commandlinetools-linux-6858069_latest.zip
-        mkdir -p $ANDROID_HOME
-        mv cmdline-tools $ANDROID_HOME
-        yes | sdkmanager --sdk_root=$ANDROID_HOME --licenses
-        sdkmanager --sdk_root=$ANDROID_HOME "ndk;25.2.9519653" "platforms;android-21"
+      - name: install toolchain
+        run: |
+          cargo install cbindgen
+          apt update && apt install -y make llvm-dev libclang-dev clang pkg-config unzip curl default-jdk build-essential patchelf
+          export ANDROID_HOME=/tmp/Android/sdk
+          export NDK_HOME=/tmp/Android/sdk/ndk/25.2.9519653
+          export PATH=$ANDROID_HOME/cmdline-tools/bin:$PATH
+          cd /tmp/
+          curl -OL https://dl.google.com/android/repository/commandlinetools-linux-6858069_latest.zip
+          unzip commandlinetools-linux-6858069_latest.zip
+          mkdir -p $ANDROID_HOME
+          mv cmdline-tools $ANDROID_HOME
+          yes | sdkmanager --sdk_root=$ANDROID_HOME --licenses
+          sdkmanager --sdk_root=$ANDROID_HOME "ndk;25.2.9519653" "platforms;android-21"
 
-    - name: build
-      run: |
-        export ANDROID_HOME=/tmp/Android/sdk
-        export NDK_HOME=/tmp/Android/sdk/ndk/25.2.9519653
-        # Add environment variables for 16KB page size support
-        export RUSTFLAGS="-C link-arg=-Wl,-z,common-page-size=0x4000 -C link-arg=-Wl,-z,max-page-size=0x4000"
-        ./scripts/build_android.sh
+      - name: build
+        run: |
+          export ANDROID_HOME=/tmp/Android/sdk
+          export NDK_HOME=/tmp/Android/sdk/ndk/25.2.9519653
+          # Add environment variables for 16KB page size support
+          export RUSTFLAGS="-C link-arg=-Wl,-z,common-page-size=0x4000 -C link-arg=-Wl,-z,max-page-size=0x4000"
+          ./scripts/build_android.sh
 
-    - name: fix alignment for 16KB pages
-      run: |
-        # Fix alignment for 16KB boundaries
-        for so_file in target/leaf-android-libs/libleaf-*.so; do
-          if [ -f "$so_file" ]; then
-            echo "Fixing alignment for $so_file"
-            # Fix alignment at 16KB (0x4000) boundaries
-            patchelf --set-page-size 0x4000 "$so_file" || true
-            # Check segment alignment
-            readelf -l "$so_file" | grep -E "(LOAD|TLS)" || true
-          fi
-        done
-
-    - name: verify 16KB page size support
-      run: |
-        echo "Verifying 16KB page size support on Android .so files..."
-        for so_file in target/leaf-android-libs/libleaf-*.so; do
-          if [ -f "$so_file" ]; then
-            echo "=== Verifying $so_file ==="
-            
-            # Check if file exists and is readable
-            if [ ! -r "$so_file" ]; then
-              echo "ERROR: Cannot read $so_file"
-              exit 1
+      - name: fix alignment for 16KB pages
+        run: |
+          # Fix alignment for 16KB boundaries
+          for so_file in target/leaf-android-libs/libleaf-*.so; do
+            if [ -f "$so_file" ]; then
+              echo "Fixing alignment for $so_file"
+              # Fix alignment at 16KB (0x4000) boundaries
+              patchelf --set-page-size 0x4000 "$so_file" || true
+              # Check segment alignment
+              readelf -l "$so_file" | grep -E "(LOAD|TLS)" || true
             fi
-            
-            # Verify page size is set to 16KB (0x4000)
-            page_size=$(readelf -h "$so_file" | grep "Page size" | awk '{print $3}')
-            if [ "$page_size" = "0x4000" ]; then
-              echo "✓ Page size correctly set to 16KB (0x4000)"
-            else
-              echo "✗ Page size is $page_size, expected 0x4000"
-              exit 1
-            fi
-            
-            # Check segment alignment for 16KB boundaries
-            segment_alignment=$(readelf -l "$so_file" | grep "LOAD" | head -1 | awk '{print $6}')
-            if [ -n "$segment_alignment" ] && [ "$segment_alignment" = "0x4000" ]; then
-              echo "✓ Segment alignment correctly set to 16KB (0x4000)"
-            else
-              echo "✗ Segment alignment is $segment_alignment, expected 0x4000"
-              exit 1
-            fi
-            
-            # Verify all LOAD segments are aligned to 16KB boundaries
-            load_segments=$(readelf -l "$so_file" | grep "LOAD" | awk '{print $2, $6}')
-            all_aligned=true
-            while IFS= read -r line; do
-              if [ -n "$line" ]; then
-                vaddr=$(echo "$line" | awk '{print $1}')
-                align=$(echo "$line" | awk '{print $2}')
-                if [ "$align" != "0x4000" ]; then
-                  echo "✗ LOAD segment at $vaddr has alignment $align, expected 0x4000"
-                  all_aligned=false
-                fi
+          done
+
+      - name: verify 16KB page size support
+        run: |
+          echo "Verifying 16KB page size support on Android .so files..."
+          for so_file in target/leaf-android-libs/libleaf-*.so; do
+            if [ -f "$so_file" ]; then
+              echo "=== Verifying $so_file ==="
+              
+              # Check if file exists and is readable
+              if [ ! -r "$so_file" ]; then
+                echo "ERROR: Cannot read $so_file"
+                exit 1
               fi
-            done <<< "$load_segments"
-            
-            if [ "$all_aligned" = true ]; then
-              echo "✓ All LOAD segments aligned to 16KB boundaries"
-            else
-              echo "✗ Some LOAD segments are not aligned to 16KB boundaries"
-              exit 1
+              
+              # Verify page size is set to 16KB (0x4000)
+              page_size=$(readelf -h "$so_file" | grep "Page size" | awk '{print $3}')
+              if [ "$page_size" = "0x4000" ]; then
+                echo "✓ Page size correctly set to 16KB (0x4000)"
+              else
+                echo "✗ Page size is $page_size, expected 0x4000"
+                exit 1
+              fi
+              
+              # Check segment alignment for 16KB boundaries
+              segment_alignment=$(readelf -l "$so_file" | grep "LOAD" | head -1 | awk '{print $6}')
+              if [ -n "$segment_alignment" ] && [ "$segment_alignment" = "0x4000" ]; then
+                echo "✓ Segment alignment correctly set to 16KB (0x4000)"
+              else
+                echo "✗ Segment alignment is $segment_alignment, expected 0x4000"
+                exit 1
+              fi
+              
+              # Verify all LOAD segments are aligned to 16KB boundaries
+              load_segments=$(readelf -l "$so_file" | grep "LOAD" | awk '{print $2, $6}')
+              all_aligned=true
+              while IFS= read -r line; do
+                if [ -n "$line" ]; then
+                  vaddr=$(echo "$line" | awk '{print $1}')
+                  align=$(echo "$line" | awk '{print $2}')
+                  if [ "$align" != "0x4000" ]; then
+                    echo "✗ LOAD segment at $vaddr has alignment $align, expected 0x4000"
+                    all_aligned=false
+                  fi
+                fi
+              done <<< "$load_segments"
+              
+              if [ "$all_aligned" = true ]; then
+                echo "✓ All LOAD segments aligned to 16KB boundaries"
+              else
+                echo "✗ Some LOAD segments are not aligned to 16KB boundaries"
+                exit 1
+              fi
+              
+              echo "=== Verification completed for $so_file ==="
+              echo ""
             fi
-            
-            echo "=== Verification completed for $so_file ==="
-            echo ""
-          fi
-        done
-        echo "✓ All Android .so files verified for 16KB page size support"
+          done
+          echo "✓ All Android .so files verified for 16KB page size support"
 
-    - name: zip artifacts
-      run: |
-        mv target/leaf-android-libs .
-        zip -r leaf-android-libs.zip leaf-android-libs
+      - name: zip artifacts
+        run: |
+          mv target/leaf-android-libs .
+          zip -r leaf-android-libs.zip leaf-android-libs
 
-    - name: upload assets
-      uses: actions/upload-artifact@v4
-      with:
-        name: leaf-android-libs.zip
-        path: leaf-android-libs.zip
+      - name: upload assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: leaf-android-libs.zip
+          path: leaf-android-libs.zip
 
   create-release:
     needs: [build-cli-cross, build-cli-macos, build-lib-apple, build-lib-android]
